@@ -1,0 +1,83 @@
+---
+title: "Machine Learning Project - February 2016"
+output: html_document
+---
+
+**Abstract:** This report describes the construction and results of a prediction algorithm to determine the manner in which a dumbbell lift was performed based on accelerometer data collected during the exercise. Using data from accelerometers located on the belts, forearms, arms, and dumbbells of participants asked to perform dumbbell lifts either correctly (Class A) or in four different incorrect ways (Classes B-E), a Random Forest model was created that was able to predict the class used with an estimated accuracy of 99.45%.
+
+```{r, warning=FALSE, message=FALSE}
+require(caret)
+require(ggplot2)
+
+data <- read.csv('pml-training.csv')
+```
+
+**The Data:** The data used for this report were taken from the Weight Lifting Exercises Dataset from Groupware@LES. These data were collected from six healthy male participants asked to perform unilateral dumbbell biceps curls either correctly (Class A), while throwing the elbows forward (Class B), while lifting the dumbbell only halfway (Class C), while lowering the dumbbell only halfway (Class D), or while throwing the hips forward (Class E). Each particpant performed 10 repitions of each lift class, and data were collected from accelerometers located on the participants' belts, forearms, and arms, as well as the dumbbells themselves. The measurements from each accelerometer included roll, pitch, and yaw, along with magnet, accel, gyros in total and in the x, y, and z planes. Additional data was collected as well, including timestamp and repetition data and numberical identifiers for the particpants performing the lifts. Finally, the Class of lift the participant was asked to perform was also included.
+
+```{r, cache=TRUE, warning=FALSE, message=FALSE}
+data <- data[, colSums(is.na(data)) == 0]
+data <- data[, -nearZeroVar(data)]
+data <- data[ , -which(names(data) %in% c('X', 'user_name', 'raw_timestamp_part_1',
+                                          'raw_timestamp_part_2', 'cvtd_timestamp',
+                                          'num_window'))]
+```
+
+**Pre-Processing and Variable Selection:** Initial pre-processing of the raw data was performed to remove variables that contained missing values and variables with zero or near-zero variance (using the caret package's nearZeroVar function) to eliminate variables with missing data or with insufficient variation to likely be useful to the classification algorithm. Data relating to the repetition count, the participant, or the timestamp were also removed so that the final model would be based only on measurements related to movements during the dumbbell lifts.
+
+The two figures below show the distributions of the variables remaining after the above pre-processing was performed vs. Class. While some variables are more highly differentiated across the different Class types than others, all of the variables were kept in the dataset because Random Forest models are robust to large numbers of variables.
+
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE, out.width ='750px', out.height = '5000px'}
+featurePlot(x = data[, 1:24],
+            y=data$classe,
+            plot='box',
+            par.strip.text=list(cex=0.5),
+            scales = list(y = list(relation="free"),
+                                x = list(rot = 0)),
+            layout = c(4,6))
+```
+
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE, out.width ='750px', out.height = '5000px'}
+featurePlot(x = data[, 25:52],
+            y=data$classe,
+            plot='box',
+            par.strip.text=list(cex=0.5),
+            scales = list(y = list(relation="free"),
+                                x = list(rot = 0)),
+            layout = c(4,7))
+```
+
+```{r, echo=TRUE, cache=TRUE, warning=FALSE, message=FALSE}
+set.seed(1357)
+inTrain <- createDataPartition(y=data$classe, p = 0.75, list = FALSE)
+training <- data[inTrain,]
+testing <- data[-inTrain,]
+```
+
+**Modeling:** After narrowing the prediction variables to those that will be used in the final model to predict Class, the overall data set (19,622 observations) was partitioned into a training data set (75%, or 14,718 observations) and a testing data set (25%, or 4,904 observations). Model building was then performed using the training data set with 10-fold cross-validation to create a Random Forest model. All of the remaining 52 predictor variables in the data set were used to predict the response variable, Class.
+
+```{r, echo=TRUE, cache=TRUE, warning=FALSE, message=FALSE}
+tc <- trainControl(method = "cv", number = 10)
+modFit.rf <- train(classe ~ ., data = training,
+                   trControl = tc, nTrees = 10, method = 'rf')
+modPredict.rf <- predict(modFit.rf, testing)
+conMatrix.rf <- confusionMatrix(testing$classe, modPredict.rf)
+imp.rf <- varImp(modFit.rf, scale=TRUE)
+```
+
+**Results:** After model building, the model was used to predict that values of Class for the testing data set. A confusion matrix of the Predictions vs. the actual Reference values is presented below, along with accuracy statistics for the overall model.
+
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+conMatrix.rf$table
+```
+
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+conMatrix.rf$overall
+```
+
+Based on the above table and values, the expected out-of-sample accuracy is estimated to be very high, at around 99.45% (with a 95% confidence interval of 99.20%-99.64%). It should also be noted that the model was particularly accurate at identifying dumbbell lifts that were performed correctly (Class A, 99.71%), and the model did not incorrectly label as correctly performed any sample in the testing data that was actually performed incorrectly.
+
+Finally, the figure below shows the 20 most important predictors in the model, based on the caret package's varImp function (with the relatively importances of the 52 variables scaled from 0 to 100).
+
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+plot(imp.rf, top = 20)
+```
